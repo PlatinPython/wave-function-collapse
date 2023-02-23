@@ -1,0 +1,13 @@
+debug/
+target/
+**/*.rs.bk
+*.pdb
+
+# idea
+*.ipr
+*.iws
+*.iml
+.idea/
+
+# project specific
+*.png
