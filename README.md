@@ -1,0 +1,1 @@
+Learning how to implement the wave function collapse algorithm in Rust.
