@@ -5,7 +5,7 @@ use image::DynamicImage;
 use crate::prototype::direction::Direction;
 use crate::prototype::rotation::{Rotatable, Rotation};
 
-type Sockets = HashMap<Direction, bool>;
+pub(crate) type Sockets = HashMap<Direction, bool>;
 type NeighborLists<'a> = HashMap<Direction, Vec<&'a Prototype<'a>>>;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -60,10 +60,15 @@ impl<'a> Prototype<'a> {
         prototypes
     }
 
+    #[allow(unused)]
     pub(crate) fn add_neighbor(&mut self, direction: Direction, neighbor: &'a Prototype) {
         if let Some(neighbor_list) = self.neighbor_lists.get_mut(&direction) {
             neighbor_list.push(neighbor);
         }
+    }
+
+    pub(crate) fn image(&self) -> &DynamicImage {
+        &self.image
     }
 
     fn equals(&self, other: &Self) -> bool {
