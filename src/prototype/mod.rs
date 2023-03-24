@@ -71,6 +71,10 @@ impl<'a> Prototype<'a> {
         &self.image
     }
 
+    pub(crate) fn matches(&self, other: &Self, direction: Direction) -> bool {
+        self.sockets[&direction] == other.sockets[&direction.opposite()]
+    }
+
     fn equals(&self, other: &Self) -> bool {
         self == other
             || (self.sockets == other.sockets && self.neighbor_lists == other.neighbor_lists)

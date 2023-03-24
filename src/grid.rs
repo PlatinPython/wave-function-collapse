@@ -3,7 +3,9 @@ use std::cmp;
 use image::imageops::Nearest;
 use image::{DynamicImage, GenericImageView, RgbaImage};
 use ouroboros::self_referencing;
+use rand::prelude::*;
 
+use crate::prototype::direction::Direction;
 use crate::prototype::{Prototype, Sockets};
 
 #[self_referencing]
@@ -13,7 +15,7 @@ pub(crate) struct Grid<'a> {
     prototypes: Vec<Prototype<'a>>,
     #[borrows(prototypes)]
     #[covariant]
-    grid: Vec<Vec<Option<&'this Prototype<'a>>>>,
+    grid: Vec<Vec<Vec<&'this Prototype<'a>>>>,
     img_width: u32,
     img_height: u32,
 }
@@ -25,7 +27,6 @@ impl<'a> Grid<'a> {
         base_prototypes: Vec<(DynamicImage, Sockets)>,
         empty: DynamicImage,
     ) -> Self {
-        let grid = vec![vec![None; height as usize]; width as usize];
         let img_width = cmp::max(
             empty.width(),
             base_prototypes
@@ -53,7 +54,9 @@ impl<'a> Grid<'a> {
             width,
             height,
             prototypes,
-            grid_builder: |_| grid,
+            grid_builder: |prototypes| {
+                vec![vec![prototypes.iter().collect(); height as usize]; width as usize]
+            },
             img_width,
             img_height,
         }
@@ -68,19 +71,84 @@ impl<'a> Grid<'a> {
         *self.borrow_height()
     }
 
-    pub(crate) fn grid<'this>(&'this self) -> &'this Vec<Vec<Option<&'this Prototype<'a>>>> {
+    pub(crate) fn grid<'this>(&'this self) -> &'this Vec<Vec<Vec<&'this Prototype<'a>>>> {
         self.borrow_grid()
     }
 
-    pub(crate) fn change(&mut self, x: usize, y: usize) {
-        self.with_mut(|fields| {
-            fields.grid[x][y] = Some(
-                fields
-                    .prototypes
-                    .get((x + y) % fields.prototypes.len())
-                    .unwrap(),
-            )
+    pub(crate) fn is_collapsed(&self) -> bool {
+        self.grid().iter().flatten().all(|v| v.len() == 1)
+    }
+
+    pub(crate) fn iterate(&mut self) {
+        let (x, y) = self.get_min_entropy_coords();
+        self.collapse_at(x, y);
+        self.propagate(x, y);
+    }
+
+    fn get_min_entropy_coords(&self) -> (usize, usize) {
+        let mut min_entropy = self.borrow_prototypes().len();
+        for x in 0..self.width() as usize {
+            for y in 0..self.height() as usize {
+                if self.grid()[x][y].len() < min_entropy && self.grid()[x][y].len() != 1 {
+                    min_entropy = self.grid()[x][y].len()
+                }
+            }
+        }
+        self.grid()
+            .iter()
+            .enumerate()
+            .flat_map(|(x, columns)| {
+                columns
+                    .iter()
+                    .enumerate()
+                    .map(move |(y, options)| (x, y, options))
+            })
+            .filter(|(_, _, options)| options.len() == min_entropy)
+            .map(|(x, y, _)| (x, y))
+            .choose(&mut thread_rng())
+            .expect("There should always be at least one element with minimal entropy")
+    }
+
+    fn collapse_at(&mut self, x: usize, y: usize) {
+        self.with_grid_mut(|grid| {
+            grid[x][y] = grid[x][y]
+                .iter()
+                .copied()
+                .choose_multiple(&mut thread_rng(), 1);
         });
+    }
+
+    fn propagate(&mut self, x: usize, y: usize) {
+        let mut stack = Vec::new();
+        stack.push((x, y));
+        while let Some((x, y)) = stack.pop() {
+            self.neighbors(x, y)
+                .iter()
+                .for_each(|(other_x, other_y, direction)| {
+                    self.with_grid_mut(|grid| {
+                        let prototype = grid[x][y][0];
+                        grid[*other_x][*other_y]
+                            .retain(|other| prototype.matches(other, *direction));
+                    })
+                });
+        }
+    }
+
+    fn neighbors(&self, x: usize, y: usize) -> Vec<(usize, usize, Direction)> {
+        let mut neighbors = Vec::with_capacity(4);
+        if x != 0 {
+            neighbors.push((x - 1, y, Direction::West));
+        }
+        if x != self.width() as usize - 1 {
+            neighbors.push((x + 1, y, Direction::East));
+        }
+        if y != 0 {
+            neighbors.push((x, y - 1, Direction::North));
+        }
+        if y != self.height() as usize - 1 {
+            neighbors.push((x, y + 1, Direction::South));
+        }
+        neighbors
     }
 
     pub(crate) fn to_image(&self) -> DynamicImage {
@@ -97,16 +165,12 @@ impl<'a> Grid<'a> {
         image.enumerate_pixels_mut().for_each(|(x, y, pix)| {
             let x_index = (x / *self.borrow_img_width()) as usize;
             let y_index = (y / *self.borrow_img_height()) as usize;
-            match self.grid()[x_index][y_index] {
-                Some(prototype) => {
-                    *pix = prototype
-                        .image()
-                        .get_pixel(x % *self.borrow_img_width(), y % *self.borrow_img_height())
-                }
-                None => {
-                    *pix =
-                        empty.get_pixel(x % *self.borrow_img_width(), y % *self.borrow_img_height())
-                }
+            if self.grid()[x_index][y_index].len() == 1 {
+                *pix = self.grid()[x_index][y_index][0]
+                    .image()
+                    .get_pixel(x % *self.borrow_img_width(), y % *self.borrow_img_height());
+            } else {
+                *pix = empty.get_pixel(x % *self.borrow_img_width(), y % *self.borrow_img_height());
             }
         });
         DynamicImage::ImageRgba8(image)
