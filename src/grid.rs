@@ -126,10 +126,22 @@ impl<'a> Grid<'a> {
                 .iter()
                 .for_each(|(other_x, other_y, direction)| {
                     self.with_grid_mut(|grid| {
-                        let prototype = grid[x][y][0];
-                        grid[*other_x][*other_y]
-                            .retain(|other| prototype.matches(other, *direction));
-                    })
+                        let prototypes = grid[x][y].clone();
+                        let orig_len = grid[*other_x][*other_y].len();
+                        if orig_len == 1 {
+                            return;
+                        }
+                        grid[*other_x][*other_y].retain(|other| {
+                            prototypes
+                                .iter()
+                                .any(|prototype| prototype.matches(other, *direction))
+                        });
+                        if orig_len != grid[*other_x][*other_y].len()
+                            && !stack.contains(&(*other_x, *other_y))
+                        {
+                            stack.push((*other_x, *other_y));
+                        }
+                    });
                 });
         }
     }

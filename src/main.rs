@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use std::thread;
-use std::time::Duration;
 
 use image::io::Reader;
 use show_image::{create_window, AsImageView, WindowOptions};
@@ -28,10 +26,9 @@ fn main() {
         .unwrap();
     let no_way = Reader::open("images/no_way.png").unwrap().decode().unwrap();
 
-    let window = create_window("image", WindowOptions::default()).unwrap();
     let mut grid = Grid::generate_grid(
-        20,
-        20,
+        50,
+        50,
         vec![
             (
                 no_way.clone(),
@@ -56,16 +53,15 @@ fn main() {
         ],
         no_way,
     );
+    let window = create_window("image", WindowOptions::default()).unwrap();
     let image = grid.to_image();
     let image_view = image.as_image_view().unwrap();
     window.set_image("grid", image_view).unwrap();
-    thread::sleep(Duration::from_millis(100));
     while !grid.is_collapsed() {
         grid.iterate();
         let image = grid.to_image();
         let image_view = image.as_image_view().unwrap();
         window.set_image("grid", image_view).unwrap();
-        thread::sleep(Duration::from_millis(100));
     }
     window.wait_until_destroyed().unwrap();
 }
