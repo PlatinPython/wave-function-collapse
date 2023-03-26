@@ -1,7 +1,7 @@
 use std::cmp;
 
 use image::imageops::Nearest;
-use image::{DynamicImage, GenericImageView, RgbaImage};
+use image::{DynamicImage, GenericImage, GenericImageView, RgbaImage};
 use ouroboros::self_referencing;
 use rand::prelude::*;
 
@@ -18,6 +18,7 @@ pub(crate) struct Grid<'a> {
     grid: Vec<Vec<Vec<&'this Prototype<'a>>>>,
     img_width: u32,
     img_height: u32,
+    img: DynamicImage,
 }
 
 impl<'a> Grid<'a> {
@@ -50,6 +51,7 @@ impl<'a> Grid<'a> {
                 prototypes.push(prototype);
             }
         }
+        let img = Grid::create_image(img_width, img_height, width, height);
         GridBuilder {
             width,
             height,
@@ -59,8 +61,19 @@ impl<'a> Grid<'a> {
             },
             img_width,
             img_height,
+            img,
         }
         .build()
+    }
+
+    fn create_image(img_width: u32, img_height: u32, width: u32, height: u32) -> DynamicImage {
+        let empty = DynamicImage::default().resize_exact(img_width, img_height, Nearest);
+
+        let mut image = RgbaImage::new(width * img_width, height * img_height);
+        image
+            .enumerate_pixels_mut()
+            .for_each(|(x, y, pix)| *pix = empty.get_pixel(x % img_width, y % img_height));
+        DynamicImage::ImageRgba8(image)
     }
 
     pub(crate) fn width(&self) -> u32 {
@@ -75,6 +88,10 @@ impl<'a> Grid<'a> {
         self.borrow_grid()
     }
 
+    pub(crate) fn img(&self) -> &DynamicImage {
+        self.borrow_img()
+    }
+
     pub(crate) fn is_collapsed(&self) -> bool {
         self.grid().iter().flatten().all(|v| v.len() == 1)
     }
@@ -82,18 +99,19 @@ impl<'a> Grid<'a> {
     pub(crate) fn iterate(&mut self) {
         let (x, y) = self.get_min_entropy_coords();
         self.collapse_at(x, y);
-        self.propagate(x, y);
+        let collapsed = self.propagate(x, y);
+        self.update_img(collapsed);
     }
 
     fn get_min_entropy_coords(&self) -> (usize, usize) {
-        let mut min_entropy = self.borrow_prototypes().len();
-        for x in 0..self.width() as usize {
-            for y in 0..self.height() as usize {
-                if self.grid()[x][y].len() < min_entropy && self.grid()[x][y].len() != 1 {
-                    min_entropy = self.grid()[x][y].len()
-                }
-            }
-        }
+        let min_entropy = self
+            .borrow_grid()
+            .iter()
+            .flatten()
+            .map(Vec::len)
+            .filter(|l| *l != 1)
+            .min()
+            .unwrap_or(self.borrow_prototypes().len());
         self.grid()
             .iter()
             .enumerate()
@@ -118,10 +136,14 @@ impl<'a> Grid<'a> {
         });
     }
 
-    fn propagate(&mut self, x: usize, y: usize) {
+    fn propagate(&mut self, x: usize, y: usize) -> Vec<(usize, usize)> {
+        let mut collapsed = Vec::new();
         let mut stack = Vec::new();
         stack.push((x, y));
         while let Some((x, y)) = stack.pop() {
+            if self.grid()[x][y].len() == 1 {
+                collapsed.push((x, y));
+            }
             self.neighbors(x, y)
                 .iter()
                 .for_each(|(other_x, other_y, direction)| {
@@ -144,6 +166,7 @@ impl<'a> Grid<'a> {
                     });
                 });
         }
+        collapsed
     }
 
     fn neighbors(&self, x: usize, y: usize) -> Vec<(usize, usize, Direction)> {
@@ -163,28 +186,20 @@ impl<'a> Grid<'a> {
         neighbors
     }
 
-    pub(crate) fn to_image(&self) -> DynamicImage {
-        let empty = DynamicImage::default().resize_exact(
-            *self.borrow_img_width(),
-            *self.borrow_img_height(),
-            Nearest,
-        );
-
-        let mut image = RgbaImage::new(
-            *self.borrow_width() * *self.borrow_img_width(),
-            *self.borrow_height() * *self.borrow_img_height(),
-        );
-        image.enumerate_pixels_mut().for_each(|(x, y, pix)| {
-            let x_index = (x / *self.borrow_img_width()) as usize;
-            let y_index = (y / *self.borrow_img_height()) as usize;
-            if self.grid()[x_index][y_index].len() == 1 {
-                *pix = self.grid()[x_index][y_index][0]
+    fn update_img(&mut self, collapsed: Vec<(usize, usize)>) {
+        collapsed.iter().for_each(|(x, y)| {
+            self.with_mut(|fields| {
+                fields.grid[*x][*y][0]
                     .image()
-                    .get_pixel(x % *self.borrow_img_width(), y % *self.borrow_img_height());
-            } else {
-                *pix = empty.get_pixel(x % *self.borrow_img_width(), y % *self.borrow_img_height());
-            }
+                    .pixels()
+                    .for_each(|(img_x, img_y, pix)| {
+                        fields.img.put_pixel(
+                            *x as u32 * *fields.img_width + img_x,
+                            *y as u32 * *fields.img_height + img_y,
+                            pix,
+                        )
+                    })
+            })
         });
-        DynamicImage::ImageRgba8(image)
     }
 }

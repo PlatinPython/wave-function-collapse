@@ -10,3 +10,6 @@ image = "0.24.5"
 show-image = { version = "0.13.1", features = ["image"] }
 ouroboros = "0.15.6"
 rand = "0.8.5"
+
+[profile.release]
+debug = 1

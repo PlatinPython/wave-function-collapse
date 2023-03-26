@@ -1,26 +1,17 @@
 use std::collections::HashMap;
+use std::time::Instant;
 
+use image::ImageFormat;
 use image::io::Reader;
-use show_image::{create_window, AsImageView, WindowOptions};
+use show_image::{AsImageView, create_window, WindowOptions};
 
 use crate::grid::Grid;
 use crate::prototype::direction::Direction::*;
 
 #[show_image::main]
 fn main() {
-    let one_way = Reader::open("images/one_way.png")
-        .unwrap()
-        .decode()
-        .unwrap();
-    let two_way = Reader::open("images/two_way.png")
-        .unwrap()
-        .decode()
-        .unwrap();
+    let instant = Instant::now();
     let three_way = Reader::open("images/three_way.png")
-        .unwrap()
-        .decode()
-        .unwrap();
-    let four_way = Reader::open("images/four_way.png")
         .unwrap()
         .decode()
         .unwrap();
@@ -35,34 +26,26 @@ fn main() {
                 HashMap::from([(North, false), (East, false), (South, false), (West, false)]),
             ),
             (
-                one_way,
-                HashMap::from([(North, true), (East, false), (South, false), (West, false)]),
-            ),
-            (
-                two_way,
-                HashMap::from([(North, false), (East, true), (South, false), (West, true)]),
-            ),
-            (
                 three_way,
                 HashMap::from([(North, true), (East, true), (South, false), (West, true)]),
-            ),
-            (
-                four_way,
-                HashMap::from([(North, true), (East, true), (South, true), (West, true)]),
             ),
         ],
         no_way,
     );
     let window = create_window("image", WindowOptions::default()).unwrap();
-    let image = grid.to_image();
+    let image = grid.img();
     let image_view = image.as_image_view().unwrap();
     window.set_image("grid", image_view).unwrap();
     while !grid.is_collapsed() {
         grid.iterate();
-        let image = grid.to_image();
+        let image = grid.img();
         let image_view = image.as_image_view().unwrap();
         window.set_image("grid", image_view).unwrap();
     }
+    grid.img()
+        .save_with_format("output.png", ImageFormat::Png)
+        .unwrap();
+    println!("{:?}", instant.elapsed());
     window.wait_until_destroyed().unwrap();
 }
 
